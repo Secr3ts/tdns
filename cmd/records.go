@@ -14,15 +14,16 @@ import (
 )
 
 var (
-	recordType string
-	jsonOutput bool
-	overwrite  bool
-	assumeYes  bool
-	zoneName   string
-	recordTTL  int
-	ipAddress  string
-	cnameValue string
-	domainName string
+	recordType   string
+	jsonOutput   bool
+	overwrite    bool
+	assumeYes    bool
+	zoneName     string
+	recordTTL    int
+	ipAddress    string
+	newIpAddress string
+	cnameValue   string
+	domainName   string
 )
 
 var recordsGetCmd = &cobra.Command{
@@ -99,6 +100,17 @@ func recordQuery() url.Values {
 	return q
 }
 
+func recordUpdateQuery() url.Values {
+	q := url.Values{
+		"domain": {domainName},
+		"zone":   {zoneName},
+		"type":   {recordType},
+		"ptr":    {"false"},
+	}
+
+	return q
+}
+
 var recordsAddCmd = &cobra.Command{
 	Use:     "add",
 	Aliases: []string{"a"},
@@ -113,6 +125,45 @@ var recordsAddCmd = &cobra.Command{
 		q.Set("overwrite", strconv.FormatBool(overwrite))
 
 		result, _, err := api.New().GetJSON("/api/zones/records/add", q)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+			os.Exit(1)
+		}
+
+		if jsonOutput {
+			raw, _ := json.MarshalIndent(result["response"], "", "  ")
+			fmt.Println(string(raw))
+			return
+		}
+	},
+}
+
+var recordsUpdateCmd = &cobra.Command{
+	Use:     "update",
+	Aliases: []string{"u", "upd"},
+	Short:   "Updates a record from a zone",
+	Run: func(cmd *cobra.Command, args []string) {
+		if zoneName == "" || recordType == "" || domainName == "" {
+			fmt.Fprintln(os.Stderr, "❌ --zone, --type, --domain are required")
+			os.Exit(1)
+		}
+
+		q := recordUpdateQuery()
+
+		switch recordType {
+		case "A":
+			if newIpAddress == "" || ipAddress == "" {
+				fmt.Fprintln(os.Stderr, "❌ --ip, --nip are required")
+				os.Exit(1)
+			}
+			q.Set("value", ipAddress)
+			q.Set("newValue", newIpAddress)
+		default:
+			fmt.Fprintln(os.Stderr, "❌ This Record Type hasn't been implemented yet")
+			os.Exit(1)
+		}
+
+		result, _, err := api.New().GetJSON("/api/zones/records/update", q)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 			os.Exit(1)
@@ -173,6 +224,12 @@ func init() {
 	recordsAddCmd.Flags().StringVar(&cnameValue, "cname", "", "CNAME target")
 	recordsAddCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output raw JSON of response")
 	recordsCmd.AddCommand(recordsAddCmd)
+	recordsUpdateCmd.Flags().StringVarP(&zoneName, "zone", "z", "", "Zone name")
+	recordsUpdateCmd.Flags().StringVarP(&recordType, "type", "r", "", "Record type")
+	recordsUpdateCmd.Flags().StringVarP(&domainName, "domain", "n", "", "Domain name")
+	recordsUpdateCmd.Flags().StringVar(&ipAddress, "ip", "", "IP address")
+	recordsUpdateCmd.Flags().StringVar(&newIpAddress, "nip", "", "New IP address")
+	recordsCmd.AddCommand(recordsUpdateCmd)
 	recordsGetCmd.Flags().StringVarP(&recordType, "filter", "f", "", "Filter by record type (e.g. A, MX, TXT)")
 	recordsGetCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output raw JSON instead of formatted text")
 	recordsCmd.AddCommand(recordsGetCmd)
